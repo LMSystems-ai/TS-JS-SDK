@@ -10,7 +10,6 @@
     },
     "scripts": {
         "prepare": "npm run build",
-        "prepublish": "npm run clean && npm run build",
         "build": "tsc --module ES2020",
         "test": "jest",
         "start:example": "tsx examples/usage.ts",

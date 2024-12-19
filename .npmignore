@@ -1,0 +1,11 @@
+.git
+.gitignore
+node_modules
+src
+examples
+.env
+.DS_Store
+.query*
+tsconfig.json
+.eslintrc
+.prettierrc
