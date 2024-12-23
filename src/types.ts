@@ -19,11 +19,8 @@ export interface GraphInput {
 }
 
 export interface CheckpointListOptions {
-  // Add the properties you need for checkpoint listing
-  // For example:
   limit?: number;
   offset?: number;
-  // Add other options as needed
 }
 
 export type PregelInputType = any;
