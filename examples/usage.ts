@@ -13,7 +13,7 @@ dotenv.config();
     };
 
     const graphName = "stripe-expert-31";
-    const apiKey = "lmsys-424cf0b9d1b0a290adc42f547f582e0b03df204591da9633";
+    const apiKey = "";
 
     console.log("Creating new PurchasedGraph instance...");
     const purchasedGraph = new PurchasedGraph(
