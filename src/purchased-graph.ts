@@ -1,5 +1,5 @@
 import { RemoteGraph } from "@langchain/langgraph/remote";
-import { BaseMessage, AIMessage, FunctionMessage } from "@langchain/core/messages";
+import { BaseMessage, AIMessage, FunctionMessage, HumanMessage } from "@langchain/core/messages";
 import { RunnableConfig } from "@langchain/core/runnables";
 import { IterableReadableStream } from "@langchain/core/utils/stream";
 import os from "os";
@@ -14,6 +14,26 @@ interface GraphInfo {
   graph_url: string;
   lgraph_api_key: string;
   configurables?: Record<string, any>;
+}
+
+interface MessageResponse {
+  type?: string;
+  name?: string;
+  content: string;
+  additional_kwargs?: Record<string, any>;
+}
+
+interface StreamResponse {
+  messages?: MessageResponse[];
+  function_call?: {
+    name: string;
+    arguments: string;
+  };
+}
+
+interface StateUpdate {
+  nodeIds: string[];
+  state: Record<string, any>;
 }
 
 export class PurchasedGraph extends RemoteGraph {
@@ -49,7 +69,6 @@ export class PurchasedGraph extends RemoteGraph {
     if (this.initialized) return;
 
     try {
-      console.log('Initializing graph with base URL:', baseUrl);
       const response = await axios.post(
         `${baseUrl}/api/get_graph_info`,
         { graph_name: graphName },
@@ -62,10 +81,6 @@ export class PurchasedGraph extends RemoteGraph {
       );
 
       this.graphInfo = response.data;
-      console.log('Received graph info:', {
-        url: this.graphInfo.graph_url,
-        name: this.graphInfo.graph_name
-      });
 
       const newConfig = {
         graphId: this.graphInfo.graph_name,
@@ -80,7 +95,6 @@ export class PurchasedGraph extends RemoteGraph {
         ...config
       };
 
-      console.log('Initialized RemoteGraph with URL:', this.graphInfo.graph_url);
       this.initialized = true;
     } catch (error) {
       if (axios.isAxiosError(error)) {
@@ -100,15 +114,40 @@ export class PurchasedGraph extends RemoteGraph {
   }
 
   private formatAsAIMessage(content: any): BaseMessage {
+    if (typeof content === "string") {
+      return new AIMessage({ content });
+    }
+
+    // Handle message objects with type information
+    if (content.type === "human") {
+      return new HumanMessage({
+        content: content.content,
+        additional_kwargs: content.additional_kwargs || {}
+      });
+    } else if (content.type === "ai") {
+      return new AIMessage({
+        content: content.content,
+        additional_kwargs: content.additional_kwargs || {}
+      });
+    } else if (content.type === "function") {
+      return new FunctionMessage({
+        content: content.content,
+        name: content.name,
+        additional_kwargs: content.additional_kwargs || {}
+      });
+    }
+
+    // Default to AIMessage for unknown types
     return new AIMessage({
-      content: typeof content === "string" ? content : JSON.stringify(content)
+      content: JSON.stringify(content)
     });
   }
 
   private formatAsFunctionMessage(name: string, content: any): BaseMessage {
     return new FunctionMessage({
       content: typeof content === "string" ? content : JSON.stringify(content),
-      name
+      name,
+      additional_kwargs: {}
     });
   }
 
@@ -120,31 +159,36 @@ export class PurchasedGraph extends RemoteGraph {
     if (!this.graphInfo?.graph_url) {
       throw new Error('Graph URL not properly initialized');
     }
+
     const mergedInput = {
       ...this.defaultStateValues,
       ...input
     };
+
     const response = await super.invoke(mergedInput, options);
-    const messages = Array.isArray(response)
-      ? response.map(chunk => this.formatAsAIMessage(chunk))
+
+    const messages = Array.isArray(response.messages)
+      ? response.messages.map((msg: MessageResponse) => {
+          if (msg.type === 'function') {
+            return this.formatAsFunctionMessage(msg.name || '', msg.content);
+          }
+          return this.formatAsAIMessage(msg);
+        })
       : [this.formatAsAIMessage(response)];
 
-    // Return an object with messages under the appropriate key
     return { messages };
   }
 
   public override async stream(
     input: Record<string, any>,
     options?: RunnableConfig
-  ): Promise<IterableReadableStream<BaseMessage>> {
-    // Ensure initialization is complete before any operation
+  ): Promise<IterableReadableStream<BaseMessage | StateUpdate>> {
     await this.waitForInitialization();
 
     if (!this.graphInfo?.graph_url) {
       throw new Error('Graph URL not properly initialized');
     }
 
-    // Merge defaultStateValues with input
     const mergedInput = {
       ...this.defaultStateValues,
       ...input
@@ -157,16 +201,24 @@ export class PurchasedGraph extends RemoteGraph {
       async start(controller) {
         try {
           for await (const chunk of parentStream) {
-            if (typeof chunk === "string") {
-              controller.enqueue(self.formatAsAIMessage(chunk));
-            } else if (chunk && typeof chunk === "object") {
+            if (Array.isArray(chunk) && chunk.length === 2) {
+              const [nodeIds, state] = chunk;
+              controller.enqueue({
+                nodeIds,
+                state
+              } as StateUpdate);
+            } else if (typeof chunk === "object") {
               if ("function_call" in chunk) {
                 controller.enqueue(
                   self.formatAsFunctionMessage(
-                    chunk.function_call.name,
-                    chunk.function_call.arguments
+                    (chunk as StreamResponse).function_call?.name || '',
+                    (chunk as StreamResponse).function_call?.arguments || ''
                   )
                 );
+              } else if ("messages" in chunk) {
+                for (const msg of (chunk as StreamResponse).messages || []) {
+                  controller.enqueue(self.formatAsAIMessage(msg));
+                }
               } else {
                 controller.enqueue(self.formatAsAIMessage(chunk));
               }
@@ -176,10 +228,6 @@ export class PurchasedGraph extends RemoteGraph {
         } catch (e) {
           controller.error(e);
         }
-      },
-
-      async cancel() {
-        // Handle any cleanup if needed
       }
     });
   }

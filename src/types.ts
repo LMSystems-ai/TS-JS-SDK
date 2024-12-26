@@ -1,16 +1,18 @@
-import { RunnableConfig } from '@langchain/core/runnables';
+import { Config } from "@langchain/langgraph-sdk";
 import { ChatMessage } from '@langchain/core/messages';
+import { BaseMessage } from '@langchain/core/messages';
 
-export interface PurchasedGraphConfig extends RunnableConfig {
-  configurable?: Record<string, any>;
-  [key: string]: any;
+export interface PurchasedGraphConfig extends Partial<Config> {
+  assistant_id?: string;
+  streamMode?: "values" | "updates" | "debug" | "messages" | "custom";
 }
 
 export interface GraphInfo {
   graph_name: string;
   graph_url: string;
   lgraph_api_key: string;
-  configurables?: Record<string, any>;
+  configurables?: Record<string, unknown>;
+  assistant_id?: string;
 }
 
 export interface GraphInput {
@@ -33,3 +35,15 @@ export type PregelOptions = {
   subgraphs?: boolean;
   [key: string]: any;
 };
+
+export interface StreamChunk {
+  nodeIds?: string[];
+  state?: Record<string, any>;
+  messages?: BaseMessage[];
+}
+
+export interface Thread {
+  thread_id?: string;
+  id?: string;
+  [key: string]: unknown;
+}

@@ -7,14 +7,16 @@ The official Node.js SDK for integrating purchased graphs from the [LMSystems Ma
 
 ## Overview
 
-This SDK allows you to easily integrate and run LMSystems marketplace graphs in your Node.js applications. It provides a wrapper around LangChain's RemoteGraph functionality, specifically designed for executing purchased LMSystems graphs.
+This SDK provides two main ways to integrate LMSystems marketplace graphs:
+
+1. **LmsystemsClient**: A standalone client for direct chat/streaming interactions with purchased graphs
+2. **PurchasedGraph**: A class for using purchased graphs as subgraphs within your own LangGraph applications
 
 ## Installation
 
 ```bash
 npm install lmsystems
 ```
-
 
 ## Prerequisites
 
@@ -24,58 +26,122 @@ npm install lmsystems
 
 ## Quick Start
 
+### Standalone Chat Application (LmsystemsClient)
+
+Use this approach when you want to directly interact with a purchased graph as a chat application:
+
 ```typescript
-import { PurchasedGraph } from 'lmsystems';
-import { StateGraph, MessagesAnnotation, START } from "@langchain/langgraph";
+import { LmsystemsClient } from 'lmsystems';
 import dotenv from 'dotenv';
 
-// Load environment variables (optional)
+// Load environment variables
 dotenv.config();
 
 async function main() {
-    // Initialize your graph with required parameters
-    const purchasedGraph = new PurchasedGraph(
-        "your-graph-name", // The name of your purchased graph
-        "your-lmsystems-api-key", // Your LMSystems API key
-        undefined, // Optional config
-        { // Optional state values
-            // Add any state values your graph requires
+    // Initialize the client
+    const client = new LmsystemsClient({
+        graphName: 'your-graph-name',
+        apiKey: process.env.LMSYSTEMS_API_KEY
+    });
+
+    // Setup the client (required before first use)
+    await client.setup();
+
+    try {
+        // Prepare your input
+        const input = {
+            messages: [{ role: 'user', content: "What can you help me with?" }],
+            // Add any other input parameters your graph requires
+        };
+
+        // Optional configuration
+        const config = {
+            configurable: {
+                // Add any API keys or configuration your graph needs
+                anthropic_api_key: process.env.ANTHROPIC_API_KEY,
+            }
+        };
+
+        // Stream the response
+        console.log('Starting stream...');
+        const stream = client.stream(input, config);
+
+        // Process the stream chunks
+        for await (const chunk of stream) {
+            if (typeof chunk === 'object') {
+                console.log(JSON.stringify(chunk, null, 2));
+            } else {
+                console.log(chunk);
+            }
         }
+    } catch (error) {
+        console.error('Error:', error);
+    }
+}
+```
+
+### Using as a Subgraph (PurchasedGraph)
+
+Use this approach when you want to incorporate a purchased graph into your own LangGraph application:
+
+```typescript
+import { PurchasedGraph } from 'lmsystems';
+import { StateGraph, MessagesAnnotation, START } from "@langchain/langgraph";
+
+async function main() {
+    // Initialize the purchased graph
+    const purchasedGraph = new PurchasedGraph(
+        "your-graph-name",
+        process.env.LMSYSTEMS_API_KEY
     );
 
-    // Wait for initialization
     await purchasedGraph.waitForInitialization();
 
-    // Create a parent graph (recommended approach)
+    // Create your parent graph
     const parentGraph = new StateGraph(MessagesAnnotation);
     parentGraph.addNode("purchased_node", purchasedGraph);
     parentGraph.addEdge(START, "purchased_node");
     const graph = parentGraph.compile();
 
-    // Use the graph
-    try {
-        // Single invocation
-        const result = await graph.invoke({
-            messages: [{ role: "user", content: "Your message here" }],
-        });
-        console.log("Result:", result);
-
-        // Or stream the output
-        for await (const chunk of await graph.stream({
-            messages: [{ role: "user", content: "Your message here" }],
-        })) {
-            console.log("Chunk:", chunk);
-        }
-    } catch (error) {
-        console.error("Error:", error);
-    }
+    // Use within your larger application
+    const result = await graph.invoke({
+        messages: [{ role: "user", content: "Your message here" }],
+    });
 }
 ```
 
-
 ## API Reference
 
-### `PurchasedGraph`
+### LmsystemsClient
+
+The client class for direct chat interactions with purchased graphs.
+
+#### Constructor
+
+```typescript
+constructor({
+    graphName: string,    // Name of your purchased graph
+    apiKey: string        // Your LMSystems API key
+})
+```
+
+#### Methods
+
+- `setup(): Promise<void>`
+  - Initializes the client and fetches necessary graph information
+  - Must be called before using stream()
+
+- `stream(
+    input: Record<string, any>,
+    config?: PurchasedGraphConfig,
+    streamModes?: StreamMode[]
+  ): AsyncGenerator<unknown>`
+  - Streams responses from the graph
+  - `input`: Your graph's input data
+  - `config`: Optional configuration (API keys, etc.)
+  - `streamModes`: Optional array of stream modes ("values" | "messages" | "updates")
+
+### PurchasedGraph
 
 The main class for interacting with LMSystems marketplace graphs.
 
@@ -86,9 +152,7 @@ constructor(
     graphName: string,        // Name of your purchased graph
     apiKey: string,          // Your LMSystems API key
     config?: RunnableConfig, // Optional configuration
-    defaultStateValues?: Record<string, any>,  // Default values for graph state
-    baseUrl?: string,        // Optional custom base URL
-    developmentMode?: boolean // Optional development mode flag
+    defaultStateValues?: Record<string, any>  // Default values for graph state
 )
 ```
 
@@ -109,17 +173,16 @@ constructor(
 
 ## Environment Variables
 
-The SDK supports the following environment variables:
+The SDK requires the following environment variable:
 
-- `LMSYSTEMS_BASE_URL`: Custom base URL for the LMSystems API (defaults to 'https://api.lmsystems.ai')
+- `LMSYSTEMS_API_KEY`: Your LMSystems API key (found at [lmsystems.ai/account](https://www.lmsystems.ai/account))
 
 ## Error Handling
 
 The SDK provides several error types:
 
 - `AuthenticationError`: Issues with API key or authentication
-- `GraphError`: Problems with graph execution
-- `InputError`: Invalid input parameters
+- `GraphError`: Problems with graph execution or access
 - `APIError`: General API communication issues
 
 ## Best Practices

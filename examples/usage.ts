@@ -13,7 +13,7 @@ dotenv.config();
     };
 
     const graphName = "stripe-expert-31";
-    const apiKey = "lmsys-424cf0b9d1b0a290adc42f547f582e0b03df204591da9633";
+    const apiKey = "your-lmsystems-api-key";
 
     console.log("Creating new PurchasedGraph instance...");
     const purchasedGraph = new PurchasedGraph(
@@ -43,8 +43,7 @@ dotenv.config();
       console.error("Error during invoke:", error);
     }
 
-    // Or stream outputs from both parent and subgraph
-    console.log("Streaming output...");
+    // stream outputs from both parent and subgraph
     for await (const chunk of await graph.stream({
       messages: [{ role: "user", content: "what's this repo about?" }],
     })) {

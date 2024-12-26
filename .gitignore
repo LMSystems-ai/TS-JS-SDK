@@ -3,3 +3,5 @@
 .DS_Store
 node_modules
 dist
+docs.json
+sdk-source-code.json

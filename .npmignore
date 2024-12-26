@@ -9,3 +9,5 @@ examples
 tsconfig.json
 .eslintrc
 .prettierrc
+docs.json
+sdk-source-code.json
